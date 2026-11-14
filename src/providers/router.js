@@ -54,7 +54,7 @@ export class ModelRouter {
       });
     }
 
-    // 1. Groq (Ultra-Fast LPUs - Verified Working)
+    // 1. Groq (Ultra-Fast LPUs - Verified Working for tool-calling & reasoning)
     if (config.GROQ_API_KEY) {
       list.push({
         id: 'groq-qwen',
@@ -79,15 +79,6 @@ export class ModelRouter {
         key: config.GROQ_API_KEY,
         model: 'openai/gpt-oss-120b',
         priority: 3
-      });
-      list.push({
-        id: 'groq-allam',
-        name: 'Groq (Allam 2 7B)',
-        url: 'https://api.groq.com/openai/v1/chat/completions',
-        key: config.GROQ_API_KEY,
-        model: 'allam-2-7b',
-        supportsTools: false,
-        priority: 4
       });
     }
 
@@ -406,8 +397,34 @@ export class ModelRouter {
           continue;
         }
 
-        if (attempts < maxAttempts - 1) {
+        // Failover on general errors to try next provider, or wait if up against rate limits
+        if (Date.now() - startTime < MAX_WAIT_DURATION_MS) {
           this.currentIndex = (this.currentIndex + 1) % this.providers.length;
+          // If we completed a full cycle across all providers, check if any will reset soon
+          if (attempts % this.providers.length === 0) {
+            let minWait = 999999;
+            let bestProvider = null;
+            for (const p of this.providers) {
+              const rem = this.getCooldownRemainingSeconds(p);
+              if (rem > 0 && rem < minWait) {
+                minWait = rem;
+                bestProvider = p;
+              }
+            }
+            if (bestProvider && minWait > 0 && minWait <= 70) {
+              if (this.onFailoverCallback) {
+                this.onFailoverCallback({
+                  previous: provider,
+                  reason: `Cooling down: waiting ${minWait}s for ${bestProvider.name} to reset`,
+                  retrySeconds: minWait,
+                  next: bestProvider
+                });
+              }
+              await new Promise(resolve => setTimeout(resolve, (minWait + 1) * 1000));
+              this.cooldowns.delete(bestProvider.id);
+              this.setProviderByName(bestProvider.id);
+            }
+          }
           attempts++;
           continue;
         }
