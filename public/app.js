@@ -1254,7 +1254,10 @@ function renderModelDropdownOptions(providers, currentModelName) {
     let badgeText = 'ACTIVE';
     let badgeClass = 'badge-active';
 
-    if (inCooldown && remainingSec > 0) {
+    if (p.isOffline) {
+      badgeText = 'OFFLINE';
+      badgeClass = 'badge-cooldown';
+    } else if (inCooldown && remainingSec > 0) {
       if (remainingSec >= 3600) {
         const hours = Math.round(remainingSec / 3600);
         badgeText = `WAIT ~${hours}h`;

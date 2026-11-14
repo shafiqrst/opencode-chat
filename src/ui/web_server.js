@@ -465,14 +465,20 @@ export class WebStudioServer {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       const current = this.router.getCurrentProvider();
       const providers = this.router.getActiveProviders().map(p => {
-        const remaining = this.router.getCooldownRemainingSeconds(p);
-        const inCooldown = this.router.isProviderInCooldown(p);
+        const st = this.router.getProviderStatus ? this.router.getProviderStatus(p) : {
+          inCooldown: this.router.isProviderInCooldown(p),
+          remaining: this.router.getCooldownRemainingSeconds(p),
+          isOffline: false,
+          reason: null
+        };
         return {
           id: p.id,
           name: p.name,
           model: p.model,
-          inCooldown,
-          cooldownRemaining: remaining
+          inCooldown: st.inCooldown,
+          cooldownRemaining: st.remaining,
+          isOffline: Boolean(st.isOffline),
+          reason: st.reason
         };
       });
       return res.end(JSON.stringify({

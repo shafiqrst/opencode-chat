@@ -101,12 +101,20 @@ export class ModelRouter {
         priority: 5
       });
       list.push({
+        id: 'openrouter-gemma-26b',
+        name: 'OpenRouter (Free Google Gemma 4 26B)',
+        url: 'https://openrouter.ai/api/v1/chat/completions',
+        key: config.OPENROUTER_API_KEY,
+        model: 'google/gemma-4-26b-a4b-it:free',
+        priority: 6
+      });
+      list.push({
         id: 'openrouter-nemotron-super',
         name: 'OpenRouter (Free Nemotron 3.5 Super)',
         url: 'https://openrouter.ai/api/v1/chat/completions',
         key: config.OPENROUTER_API_KEY,
         model: 'nvidia/nemotron-3.5-super-vl:free',
-        priority: 6
+        priority: 7
       });
       list.push({
         id: 'openrouter-ernie',
@@ -114,18 +122,26 @@ export class ModelRouter {
         url: 'https://openrouter.ai/api/v1/chat/completions',
         key: config.OPENROUTER_API_KEY,
         model: 'baidu/ernie-5.5-flash-preview:free',
-        priority: 7
+        priority: 8
       });
     }
 
-    // 3. NVIDIA NIM (Free DeepSeek V4.1 Flash)
+    // 3. NVIDIA NIM (Verified High-Speed Models with Tool-Calling Support)
     if (config.NVIDIA_API_KEY) {
       list.push({
-        id: 'nvidia-nim',
-        name: 'NVIDIA NIM (DeepSeek V4.1 Flash)',
+        id: 'nvidia-nim-super',
+        name: 'NVIDIA NIM (Nemotron 3.5 Super 120B)',
         url: 'https://integrate.api.nvidia.com/v1/chat/completions',
         key: config.NVIDIA_API_KEY,
-        model: 'deepseek-ai/deepseek-v4.1-flash',
+        model: 'nvidia/nemotron-3.5-super-vl-120b-a12b',
+        priority: 5
+      });
+      list.push({
+        id: 'nvidia-nim-lightning',
+        name: 'NVIDIA NIM (Nemotron 3.5 Lightning 30B)',
+        url: 'https://integrate.api.nvidia.com/v1/chat/completions',
+        key: config.NVIDIA_API_KEY,
+        model: 'nvidia/nemotron-3.5-lightning-30b-a3b',
         priority: 6
       });
     }
@@ -180,9 +196,10 @@ export class ModelRouter {
   }
 
   isProviderInCooldown(provider) {
-    const expire = this.cooldowns.get(provider.id);
-    if (!expire) return false;
-    if (Date.now() >= expire) {
+    const entry = this.cooldowns.get(provider.id);
+    if (!entry) return false;
+    const expireAt = typeof entry === 'number' ? entry : entry.expireAt;
+    if (Date.now() >= expireAt) {
       this.cooldowns.delete(provider.id); // Cooldown expired, back to normal!
       return false;
     }
@@ -190,9 +207,28 @@ export class ModelRouter {
   }
 
   getCooldownRemainingSeconds(provider) {
-    const expire = this.cooldowns.get(provider.id);
-    if (!expire) return 0;
-    return Math.max(0, Math.ceil((expire - Date.now()) / 1000));
+    const entry = this.cooldowns.get(provider.id);
+    if (!entry) return 0;
+    const expireAt = typeof entry === 'number' ? entry : entry.expireAt;
+    return Math.max(0, Math.ceil((expireAt - Date.now()) / 1000));
+  }
+
+  getProviderStatus(provider) {
+    const entry = this.cooldowns.get(provider.id);
+    if (!entry) return { inCooldown: false, remaining: 0, reason: null, isOffline: false };
+    const expireAt = typeof entry === 'number' ? entry : entry.expireAt;
+    const isOffline = typeof entry === 'object' && Boolean(entry.isOffline);
+    const reason = typeof entry === 'object' ? entry.reason : null;
+    if (Date.now() >= expireAt) {
+      this.cooldowns.delete(provider.id);
+      return { inCooldown: false, remaining: 0, reason: null, isOffline: false };
+    }
+    return {
+      inCooldown: true,
+      remaining: Math.max(0, Math.ceil((expireAt - Date.now()) / 1000)),
+      reason,
+      isOffline
+    };
   }
 
   /**
@@ -204,59 +240,53 @@ export class ModelRouter {
     }
 
     let attempts = 0;
-    const maxAttempts = this.providers.length * 2;
     const errors = [];
     const startTime = Date.now();
-    const MAX_WAIT_DURATION_MS = 30 * 60 * 1000; // Wait up to 30 minutes as requested
+    const MAX_WAIT_DURATION_MS = 30 * 60 * 1000; // Continue retrying up to 30 minutes
 
-    while (attempts < maxAttempts) {
-      // 1. If this provider is currently in cooldown, try to find an available active provider first
-      let provider = this.providers[this.currentIndex % this.providers.length];
-      let foundAvailable = false;
-
+    while (Date.now() - startTime < MAX_WAIT_DURATION_MS) {
+      // 1. Check if any provider is active and ready (not in cooldown)
+      let provider = null;
       for (let i = 0; i < this.providers.length; i++) {
         const candidate = this.providers[(this.currentIndex + i) % this.providers.length];
         if (!this.isProviderInCooldown(candidate)) {
           this.currentIndex = (this.currentIndex + i) % this.providers.length;
           provider = candidate;
-          foundAvailable = true;
           break;
         }
       }
 
-      // 2. If NO active model is ready (all are in cooldown), automatically wait for the earliest model
-      if (!foundAvailable) {
-        if (Date.now() - startTime >= MAX_WAIT_DURATION_MS) {
-          throw new Error('All configured providers exhausted: Exceeded maximum wait limit of 30 minutes.');
-        }
-
+      // 2. If ALL configured models are cooling down or offline, wait for the one that resets earliest
+      if (!provider) {
         let minWait = 999999;
-        let bestProvider = null;
+        let bestCandidate = null;
         for (const p of this.providers) {
-          const rem = this.getCooldownRemainingSeconds(p);
-          if (rem > 0 && rem < minWait) {
-            minWait = rem;
-            bestProvider = p;
+          const st = this.getProviderStatus(p);
+          // Look for candidates that reset reasonably (<= 120s, e.g. Groq TPM resets) and are not offline
+          if (st.inCooldown && !st.isOffline && st.remaining > 0 && st.remaining < minWait && st.remaining <= 120) {
+            minWait = st.remaining;
+            bestCandidate = p;
           }
         }
 
-        // Cap sleep slice to at most 60 seconds per iteration so we keep refreshing
-        const sleepSec = (minWait > 0 && minWait < 999999) ? Math.min(60, minWait) : 5;
-        if (bestProvider && this.onFailoverCallback) {
+        const waitSec = (bestCandidate && minWait > 0 && minWait < 999999) ? minWait : 15;
+        const targetModel = bestCandidate || this.providers[0];
+
+        if (this.onFailoverCallback) {
           this.onFailoverCallback({
-            previous: provider,
-            reason: `All models cooling down: waiting ${sleepSec}s for ${bestProvider.name} to reset`,
-            retrySeconds: sleepSec,
-            next: bestProvider
+            previous: targetModel,
+            reason: `All models cooling down: waiting ${waitSec}s for ${targetModel.name} to reset`,
+            retrySeconds: waitSec,
+            next: targetModel
           });
         }
 
+        const sleepSec = Math.min(30, waitSec);
         await new Promise(resolve => setTimeout(resolve, (sleepSec + 1) * 1000));
-        if (bestProvider) {
-          this.cooldowns.delete(bestProvider.id);
-          this.setProviderByName(bestProvider.id);
+        if (bestCandidate && sleepSec >= waitSec) {
+          this.cooldowns.delete(bestCandidate.id);
+          this.setProviderByName(bestCandidate.id);
         }
-        attempts = 0; // Reset attempts to try again
         continue;
       }
 
@@ -286,7 +316,7 @@ export class ModelRouter {
         }
 
         const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 20000); // 20s timeout (faster failover)
+        const timeout = setTimeout(() => controller.abort(), 25000); // 25s timeout for high reliability
 
         const headers = {
           'Content-Type': 'application/json',
@@ -338,12 +368,17 @@ export class ModelRouter {
 
             // Set cooldown expiration timestamp
             const expireAt = Date.now() + (retrySeconds * 1000);
-            this.cooldowns.set(provider.id, expireAt);
-
             const resetTime = new Date(expireAt).toLocaleTimeString();
             let reason = `Server Overloaded (${status})`;
             if (status === 429) reason = 'Rate Limit (429)';
             if (status === 413) reason = `Token Limit Reached (413 - auto reset in ${retrySeconds}s)`;
+
+            this.cooldowns.set(provider.id, {
+              expireAt,
+              reason,
+              isOffline: false
+            });
+
             errors.push(`${provider.name}: ${reason}`);
 
             if (this.onFailoverCallback) {
@@ -382,12 +417,24 @@ export class ModelRouter {
       } catch (err) {
         errors.push(`${provider.name}: ${err.message}`);
 
-        // Handle network timeout / connection refused
+        // Handle network timeout / connection refused / offline
         if (err.name === 'AbortError' || err.message.includes('fetch failed') || err.message.includes('ECONNREFUSED')) {
+          const isTimeout = err.name === 'AbortError';
+          const isConnFailed = err.message.includes('fetch failed') || err.message.includes('ECONNREFUSED');
+          const cooldownSec = isTimeout ? 45 : 90;
+          const expireAt = Date.now() + (cooldownSec * 1000);
+
+          this.cooldowns.set(provider.id, {
+            expireAt,
+            reason: isTimeout ? 'Timeout (25s)' : 'Offline / Connection Failed',
+            isOffline: isConnFailed
+          });
+
           if (this.onFailoverCallback) {
             this.onFailoverCallback({
               previous: provider,
-              reason: err.name === 'AbortError' ? 'Timeout (60s)' : 'Connection Failed',
+              reason: isTimeout ? 'Timeout (25s)' : 'Offline / Connection Failed',
+              retrySeconds: cooldownSec,
               next: this.providers[(this.currentIndex + 1) % this.providers.length]
             });
           }
@@ -397,39 +444,21 @@ export class ModelRouter {
           continue;
         }
 
+        // Put provider on brief cooldown for general errors so it doesn't loop infinitely
+        this.cooldowns.set(provider.id, {
+          expireAt: Date.now() + 30000,
+          reason: err.message.slice(0, 60),
+          isOffline: false
+        });
+
         // Failover on general errors to try next provider, or wait if up against rate limits
         if (Date.now() - startTime < MAX_WAIT_DURATION_MS) {
           this.currentIndex = (this.currentIndex + 1) % this.providers.length;
-          // If we completed a full cycle across all providers, check if any will reset soon
-          if (attempts % this.providers.length === 0) {
-            let minWait = 999999;
-            let bestProvider = null;
-            for (const p of this.providers) {
-              const rem = this.getCooldownRemainingSeconds(p);
-              if (rem > 0 && rem < minWait) {
-                minWait = rem;
-                bestProvider = p;
-              }
-            }
-            if (bestProvider && minWait > 0 && minWait <= 70) {
-              if (this.onFailoverCallback) {
-                this.onFailoverCallback({
-                  previous: provider,
-                  reason: `Cooling down: waiting ${minWait}s for ${bestProvider.name} to reset`,
-                  retrySeconds: minWait,
-                  next: bestProvider
-                });
-              }
-              await new Promise(resolve => setTimeout(resolve, (minWait + 1) * 1000));
-              this.cooldowns.delete(bestProvider.id);
-              this.setProviderByName(bestProvider.id);
-            }
-          }
           attempts++;
           continue;
         }
 
-        throw new Error(`All providers failed:\n${errors.join('\n')}`);
+        throw new Error(`All providers failed after 30m timeout:\n${errors.join('\n')}`);
       }
     }
 

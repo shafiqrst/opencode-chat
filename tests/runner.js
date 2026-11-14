@@ -154,6 +154,32 @@ async function runTests() {
     assert.ok(providers.some(p => p.id === 'local-ollama'));
   });
 
+  test('Router: Tracks provider cooldowns and offline status correctly', () => {
+    const router = new ModelRouter({
+      GROQ_API_KEY: 'test-groq-key'
+    });
+    const providers = router.getActiveProviders();
+    const p = providers[0];
+
+    // Initially not in cooldown
+    assert.strictEqual(router.isProviderInCooldown(p), false);
+    assert.strictEqual(router.getCooldownRemainingSeconds(p), 0);
+
+    // Set cooldown
+    router.cooldowns.set(p.id, {
+      expireAt: Date.now() + 45000,
+      reason: 'Token Limit Reached (413)',
+      isOffline: false
+    });
+
+    assert.strictEqual(router.isProviderInCooldown(p), true);
+    assert.ok(router.getCooldownRemainingSeconds(p) > 0);
+    const status = router.getProviderStatus(p);
+    assert.strictEqual(status.inCooldown, true);
+    assert.strictEqual(status.isOffline, false);
+    assert.ok(status.reason.includes('Token Limit'));
+  });
+
   // 6. Native VibWebs Storage Engine Tests
   test('VibWebsStore: Registers and isolates projects independently', () => {
     const customTestStoreDir = path.join(testDir, 'test_vibwebs_store');
