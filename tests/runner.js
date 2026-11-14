@@ -216,6 +216,27 @@ async function runTests() {
     assert.ok(prompt2.includes('Absolute Workspace Path: "D:\\opencode-vedio-etc"'));
   });
 
+  // 8. Conversation Retrieval API Test
+  test('Storage: Correctly retrieves messages and metadata for conversation', () => {
+    const store = new VibWebsStore(path.join(testDir, '.test_vibwebs'));
+    const convo = store.createConversation({
+      workspaceRoot: 'D:\\equality-share',
+      title: 'UI UX improvements'
+    });
+    store.appendTurn(convo.id, { role: 'user', content: 'Improve my UI' });
+    store.appendTurn(convo.id, { role: 'assistant', content: 'Here are the UI improvements' });
+
+    const msgs = store.getConversationMessages(convo.id);
+    assert.strictEqual(msgs.length, 2);
+    assert.strictEqual(msgs[0].content, 'Improve my UI');
+    assert.strictEqual(msgs[1].content, 'Here are the UI improvements');
+
+    const index = store.getConversationsIndex();
+    const meta = index.find(c => c.id === convo.id);
+    assert.strictEqual(meta.title, 'UI UX improvements');
+    assert.strictEqual(meta.workspaceRoot, 'D:\\equality-share');
+  });
+
   // Clean test dir
   if (fs.existsSync(testDir)) {
     fs.rmSync(testDir, { recursive: true, force: true });

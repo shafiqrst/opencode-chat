@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>VibWebs Studio</title>
   <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="vendor/highlight-github-dark.min.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -114,6 +115,27 @@
 
         <!-- Fixed Antigravity Input Bar at bottom -->
         <div class="ag-input-dock">
+          <!-- Floating Slash Commands Autocomplete Menu -->
+          <div class="slash-commands-popup hidden" id="slashCommandsPopup">
+            <div class="slash-header">⚡ Slash Actions</div>
+            <div class="slash-item" data-cmd="/undo">
+              <span class="slash-cmd">/undo</span>
+              <span class="slash-desc">Rollback last modified file checkpoint</span>
+            </div>
+            <div class="slash-item" data-cmd="/clear">
+              <span class="slash-cmd">/clear</span>
+              <span class="slash-desc">Reset agent conversation context</span>
+            </div>
+            <div class="slash-item" data-cmd="/test">
+              <span class="slash-cmd">npm test</span>
+              <span class="slash-desc">Run test suite and verify changes</span>
+            </div>
+            <div class="slash-item" data-cmd="/review">
+              <span class="slash-cmd">/review</span>
+              <span class="slash-desc">Switch to file inspection and review pane</span>
+            </div>
+          </div>
+
           <div class="input-card">
             <textarea id="promptInput" rows="1" placeholder="Ask anything, @ to mention, / for actions"></textarea>
             
@@ -282,6 +304,8 @@
     </div>
   </div>
 
+  <script src="vendor/marked.min.js"></script>
+  <script src="vendor/highlight.min.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

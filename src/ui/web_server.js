@@ -229,7 +229,21 @@ export class WebStudioServer {
     if (data.type === 'switch_conversation') {
       const convoId = data.conversationId;
       if (data.workspacePath && path.resolve(data.workspacePath).toLowerCase() !== path.resolve(this.workspaceRoot).toLowerCase()) {
-        this.switchWorkspace(data.workspacePath);
+        const resolved = path.resolve(data.workspacePath);
+        if (!fs.existsSync(resolved)) fs.mkdirSync(resolved, { recursive: true });
+        this.workspaceRoot = resolved;
+        this.guardrail.setWorkspaceRoot(resolved);
+        this.shellOps.setWorkspaceRoot(resolved);
+        this.checkpointManager.setWorkspaceRoot(resolved);
+        if (this.agent) {
+          if (typeof this.agent.setWorkspaceRoot === 'function') {
+            this.agent.setWorkspaceRoot(resolved);
+          }
+          if (this.agent.toolRegistry && this.agent.toolRegistry.fileOps) {
+            this.agent.toolRegistry.fileOps.setWorkspaceRoot(resolved);
+          }
+        }
+        this.store.registerProject(resolved);
       }
       this.activeConversationId = convoId;
       const messages = this.store.getConversationMessages(convoId);
@@ -239,10 +253,14 @@ export class WebStudioServer {
         this.agent.loadHistory(messages);
       }
 
+      const index = this.store.getConversationsIndex();
+      const meta = index.find(c => c.id === convoId);
+      const title = meta?.title || data.title || 'Conversation';
+
       this.broadcast({
         type: 'conversation_switched',
         conversationId: this.activeConversationId,
-        title: data.title || 'Conversation',
+        title,
         workspaceRoot: this.workspaceRoot,
         messages,
         conversations: this.store.getConversationsForWorkspace(this.workspaceRoot),
@@ -370,10 +388,13 @@ export class WebStudioServer {
     if (url.pathname === '/api/conversation' && req.method === 'GET') {
       const convoId = url.searchParams.get('id') || this.activeConversationId;
       const messages = this.store.getConversationMessages(convoId);
+      const index = this.store.getConversationsIndex();
+      const meta = index.find(c => c.id === convoId) || {};
       res.writeHead(200, { 'Content-Type': 'application/json' });
       return res.end(JSON.stringify({
         id: convoId,
-        title: 'Conversation',
+        title: meta.title || 'Conversation',
+        workspaceRoot: meta.workspaceRoot || this.workspaceRoot,
         messages
       }));
     }
@@ -483,8 +504,15 @@ export class WebStudioServer {
             return res.end(JSON.stringify({ error: 'Missing path' }));
           }
           const updated = this.switchWorkspace(newPath);
+          const messages = this.store.getConversationMessages(this.activeConversationId);
           res.writeHead(200, { 'Content-Type': 'application/json' });
-          return res.end(JSON.stringify({ success: true, workspaceRoot: updated, workspaceName: path.basename(updated) || updated }));
+          return res.end(JSON.stringify({
+            success: true,
+            workspaceRoot: updated,
+            workspaceName: path.basename(updated) || updated,
+            activeConversationId: this.activeConversationId,
+            messages
+          }));
         } catch (err) {
           res.writeHead(500, { 'Content-Type': 'application/json' });
           return res.end(JSON.stringify({ error: err.message }));

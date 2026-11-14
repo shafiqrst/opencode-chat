@@ -232,6 +232,11 @@ function handleServerMessage(data) {
       currentActiveConversationId = data.activeConversationId;
       updateBreadcrumbs(data.workspaceRoot);
       renderProjectsSidebar(cachedProjects, data.workspaceRoot, cachedConversations);
+      if (data.messages && Array.isArray(data.messages)) {
+        renderStoredMessages(data.messages);
+      } else {
+        messagesContainer.innerHTML = '';
+      }
       loadFiles();
       break;
 
@@ -243,6 +248,7 @@ function handleServerMessage(data) {
     case 'conversation_switched':
       currentActiveConversationId = data.conversationId;
       cachedConversations = data.conversations || cachedConversations;
+      if (data.workspaceRoot) updateBreadcrumbs(data.workspaceRoot);
       if (bcTopicName) bcTopicName.textContent = data.title || 'Conversation';
       renderProjectsSidebar(cachedProjects, activeWorkspaceRoot, cachedConversations);
       renderStoredMessages(data.messages || []);
@@ -251,7 +257,11 @@ function handleServerMessage(data) {
     case 'response':
       hideLiveThinking();
       setSendButtonLoading(false);
-      renderAssistantResponse(data.content);
+      renderAssistantResponse(data.content, {
+        providerUsed: data.providerUsed,
+        steps: [...currentTurnExecutionSteps]
+      });
+      currentTurnExecutionSteps = [];
       loadFiles();
       break;
 
@@ -271,7 +281,12 @@ function renderStoredMessages(messages) {
       renderUserTurn(m.content, m.timestamp);
     } else if (m.role === 'assistant') {
       const showDiff = idx === 1;
-      renderAssistantResponse(m.content, { showDiff, timestamp: m.timestamp });
+      renderAssistantResponse(m.content, {
+        showDiff,
+        timestamp: m.timestamp,
+        providerUsed: m.providerUsed,
+        steps: m.steps || []
+      });
     }
   });
 }
@@ -340,18 +355,7 @@ function renderProjectsSidebar(projects, activePath, conversations = []) {
 
         convo.addEventListener('click', (e) => {
           e.stopPropagation();
-          currentActiveConversationId = c.id;
-          if (bcWorkspaceName) bcWorkspaceName.textContent = p.name;
-          if (bcTopicName) bcTopicName.textContent = c.title;
-
-          if (ws) {
-            ws.send(JSON.stringify({
-              type: 'switch_conversation',
-              conversationId: c.id,
-              title: c.title,
-              workspacePath: p.path
-            }));
-          }
+          openConversation(c.id, c.title, p.path);
         });
 
         group.appendChild(convo);
@@ -360,6 +364,47 @@ function renderProjectsSidebar(projects, activePath, conversations = []) {
 
     projectsContainer.appendChild(group);
   });
+}
+
+// Open and load a conversation directly
+async function openConversation(convoId, convoTitle, workspacePath) {
+  if (!convoId) return;
+  currentActiveConversationId = convoId;
+
+  if (convoTitle && bcTopicName) bcTopicName.textContent = convoTitle;
+  if (workspacePath) {
+    updateBreadcrumbs(workspacePath);
+  }
+
+  // Highlight in sidebar immediately
+  renderProjectsSidebar(cachedProjects, activeWorkspaceRoot, cachedConversations);
+
+  // 1. Fetch messages directly via REST API for instant, reliable loading
+  try {
+    const res = await fetch(`/api/conversation?id=${encodeURIComponent(convoId)}`);
+    const data = await res.json();
+    if (data && Array.isArray(data.messages)) {
+      renderStoredMessages(data.messages);
+      if (data.title && bcTopicName) bcTopicName.textContent = data.title;
+      if (data.workspaceRoot) updateBreadcrumbs(data.workspaceRoot);
+    }
+  } catch (err) {
+    console.error('Failed to load conversation messages:', err);
+  }
+
+  // 2. Notify backend daemon over WebSocket to load history into agent memory
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    try {
+      ws.send(JSON.stringify({
+        type: 'switch_conversation',
+        conversationId: convoId,
+        title: convoTitle,
+        workspacePath: workspacePath
+      }));
+    } catch (err) {
+      console.warn('WS switch_conversation error:', err);
+    }
+  }
 }
 
 function timeAgo(ts) {
@@ -381,6 +426,12 @@ async function switchWorkspace(targetPath) {
     const data = await res.json();
     if (data.success) {
       updateBreadcrumbs(data.workspaceRoot);
+      currentActiveConversationId = data.activeConversationId;
+      if (data.messages && Array.isArray(data.messages)) {
+        renderStoredMessages(data.messages);
+      } else {
+        messagesContainer.innerHTML = '';
+      }
       await loadProjects();
       await loadFiles();
     }
@@ -559,11 +610,56 @@ function sendMessage() {
 }
 
 sendBtn.addEventListener('click', sendMessage);
-promptInput.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter' && !e.shiftKey) {
-    e.preventDefault();
-    sendMessage();
-  }
+// Slash Commands & Input Auto-Grow
+const slashPopup = document.getElementById('slashCommandsPopup');
+
+if (promptInput) {
+  promptInput.addEventListener('input', () => {
+    // Auto-grow height up to 180px
+    promptInput.style.height = 'auto';
+    promptInput.style.height = Math.min(promptInput.scrollHeight, 180) + 'px';
+
+    const val = promptInput.value;
+    if (val.startsWith('/') && slashPopup) {
+      slashPopup.classList.remove('hidden');
+      const query = val.toLowerCase().slice(1);
+      document.querySelectorAll('.slash-item').forEach(item => {
+        const cmd = (item.getAttribute('data-cmd') || '').toLowerCase();
+        if (cmd.includes(query)) {
+          item.style.display = 'flex';
+        } else {
+          item.style.display = 'none';
+        }
+      });
+    } else if (slashPopup) {
+      slashPopup.classList.add('hidden');
+    }
+  });
+
+  promptInput.addEventListener('keydown', (e) => {
+    if (slashPopup && !slashPopup.classList.contains('hidden')) {
+      if (e.key === 'Escape') {
+        slashPopup.classList.add('hidden');
+        return;
+      }
+    }
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      if (slashPopup) slashPopup.classList.add('hidden');
+      sendMessage();
+    }
+  });
+}
+
+document.querySelectorAll('.slash-item').forEach(item => {
+  item.addEventListener('click', () => {
+    const cmd = item.getAttribute('data-cmd');
+    if (cmd && promptInput) {
+      promptInput.value = cmd + ' ';
+      promptInput.focus();
+      if (slashPopup) slashPopup.classList.add('hidden');
+    }
+  });
 });
 
 function renderUserTurn(text, timestamp) {
@@ -575,6 +671,7 @@ function renderUserTurn(text, timestamp) {
 }
 
 let currentRunningPill = null;
+let currentTurnExecutionSteps = [];
 
 function handleAgentStep(step) {
   const toolName = step.tool || step.name || (step.args ? Object.keys(step.args)[0] : 'action');
@@ -585,10 +682,14 @@ function handleAgentStep(step) {
       if (step.args.path) detail = `: ${step.args.path}`;
       else if (step.args.command || step.args.cmd) detail = `: ${step.args.command || step.args.cmd}`;
     }
+    const label = `Ran ${toolName}${detail}`;
+    currentTurnExecutionSteps.push({ icon: '⚡', label });
     updateLiveThinking(`⚡ Running: ${toolName}${detail}`);
   } else if (step.type === 'tool_result') {
+    currentTurnExecutionSteps.push({ icon: '✔', label: `Completed ${toolName} execution` });
     updateLiveThinking(`✔ Finished ${toolName}, preparing next step...`);
   } else if (step.type === 'thinking') {
+    currentTurnExecutionSteps.push({ icon: '💭', label: 'Analyzing codebase and formulating plan' });
     updateLiveThinking('VibWebs AI is formulating response...');
   }
 }
@@ -607,23 +708,114 @@ function renderAssistantResponse(content, options = {}) {
     </div>
   ` : '';
 
-  const timeLabel = options.timestamp ? timeAgo(options.timestamp) : '2h ago';
+  const steps = options.steps || [];
+  let traceHtml = '';
+  if (steps && steps.length > 0) {
+    const stepCount = steps.filter(s => s.icon === '⚡' || s.icon === '✔').length || steps.length;
+    traceHtml = `
+      <details class="execution-trace-accordion">
+        <summary class="trace-summary">
+          <span class="trace-icon">⚡</span>
+          <span class="trace-title">Execution steps (${stepCount} action${stepCount === 1 ? '' : 's'})</span>
+          <span class="trace-arrow">▾</span>
+        </summary>
+        <div class="trace-steps-list">
+          ${steps.map(s => `
+            <div class="trace-step-item">
+              <span class="trace-item-icon">${s.icon}</span>
+              <span class="trace-item-label">${escapeHtml(s.label)}</span>
+            </div>
+          `).join('')}
+        </div>
+      </details>
+    `;
+  }
+
+  const timeLabel = options.timestamp ? timeAgo(options.timestamp) : 'Just now';
+  const modelBadge = options.providerUsed ? `
+    <span class="footer-model-badge" title="AI Provider used for this turn">
+      <span class="badge-dot">●</span> ${escapeHtml(options.providerUsed)}
+    </span>
+  ` : '';
 
   turn.innerHTML = `
     ${diffHtml}
+    ${traceHtml}
     <div class="assistant-bubble">${formatMarkdown(content)}</div>
     <div class="assistant-footer">
-      <span class="footer-time">${timeLabel}</span>
+      <div class="footer-meta">
+        ${modelBadge}
+        <span class="footer-time">${timeLabel}</span>
+      </div>
       <div class="footer-actions">
-        <button class="btn-icon-subtle" title="Copy response" onclick="navigator.clipboard.writeText(this.closest('.chat-turn').querySelector('.assistant-bubble').innerText)">📋</button>
-        <button class="btn-icon-subtle" title="Good response">👍</button>
-        <button class="btn-icon-subtle" title="Bad response">👎</button>
+        <button class="btn-icon-subtle copy-turn-btn" title="Copy response markdown" onclick="copyTurnResponse(this)">
+          <span class="btn-icon">📋</span>
+          <span class="btn-label">Copy</span>
+        </button>
+        <button class="btn-icon-subtle retry-turn-btn" title="Regenerate this turn" onclick="retryLastTurn(this)">
+          <span class="btn-icon">🔄</span>
+          <span class="btn-label">Retry</span>
+        </button>
+        <button class="btn-icon-subtle thumb-btn" title="Good response" onclick="toggleThumb(this, 'up')">👍</button>
+        <button class="btn-icon-subtle thumb-btn" title="Bad response" onclick="toggleThumb(this, 'down')">👎</button>
       </div>
     </div>
   `;
   messagesContainer.appendChild(turn);
   scrollToBottom();
 }
+
+window.copyTurnResponse = function(btn) {
+  const turn = btn.closest('.chat-turn');
+  if (!turn) return;
+  const bubble = turn.querySelector('.assistant-bubble');
+  if (!bubble) return;
+
+  navigator.clipboard.writeText(bubble.innerText).then(() => {
+    const label = btn.querySelector('.btn-label');
+    if (label) {
+      const orig = label.textContent;
+      label.textContent = 'Copied!';
+      btn.classList.add('btn-success');
+      setTimeout(() => {
+        label.textContent = orig;
+        btn.classList.remove('btn-success');
+      }, 2000);
+    }
+  }).catch(() => {});
+};
+
+window.retryLastTurn = function(btn) {
+  const turn = btn.closest('.chat-turn');
+  if (!turn) return;
+  // Find preceding user turn
+  let prev = turn.previousElementSibling;
+  while (prev && !prev.classList.contains('user-turn')) {
+    prev = prev.previousElementSibling;
+  }
+  if (prev) {
+    const bubble = prev.querySelector('.user-bubble');
+    if (bubble && promptInput) {
+      promptInput.value = bubble.innerText.trim();
+      promptInput.focus();
+      sendMessage();
+    }
+  }
+};
+
+window.toggleThumb = function(btn, type) {
+  const parent = btn.parentElement;
+  const allThumbs = parent.querySelectorAll('.thumb-btn');
+  const wasActive = btn.classList.contains(`thumb-active-${type}`);
+
+  allThumbs.forEach(t => {
+    t.classList.remove('thumb-active-up', 'thumb-active-down');
+  });
+
+  if (!wasActive) {
+    btn.classList.add(`thumb-active-${type}`);
+  }
+};
 
 // Resizers
 function initResizers() {
@@ -698,11 +890,129 @@ function escapeHtml(str) {
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
+// Setup Marked Markdown Renderer with Syntax Highlighting and Copy Buttons
+function setupMarkedRenderer() {
+  if (typeof marked === 'undefined') return null;
+
+  const renderer = new marked.Renderer();
+
+  // Custom Code Block with Header and Copy Button
+  renderer.code = function(arg1, arg2) {
+    const text = typeof arg1 === 'object' && arg1 !== null ? (arg1.text || '') : String(arg1 || '');
+    const language = typeof arg1 === 'object' && arg1 !== null ? (arg1.lang || '') : String(arg2 || '');
+    let highlighted = text;
+
+    if (typeof hljs !== 'undefined') {
+      try {
+        if (language && hljs.getLanguage(language)) {
+          highlighted = hljs.highlight(text, { language }).value;
+        } else {
+          highlighted = hljs.highlightAuto(text).value;
+        }
+      } catch (e) {
+        highlighted = escapeHtml(text);
+      }
+    } else {
+      highlighted = escapeHtml(text);
+    }
+
+    const displayLang = (language || 'code').toUpperCase();
+    return `
+      <div class="code-block-container">
+        <div class="code-block-header">
+          <span class="code-lang-tag">${escapeHtml(displayLang)}</span>
+          <button class="code-copy-btn" onclick="copyCodeBlock(this)">📋 Copy</button>
+        </div>
+        <pre><code class="hljs ${escapeHtml(language)}">${highlighted}</code></pre>
+      </div>
+    `;
+  };
+
+  // Custom Responsive Tables
+  renderer.table = function(arg1, arg2) {
+    if (typeof arg1 === 'string') {
+      return `<div class="table-responsive"><table class="markdown-table"><thead>${arg1}</thead><tbody>${arg2 || ''}</tbody></table></div>`;
+    }
+    const header = arg1?.header;
+    const rows = arg1?.rows;
+    let headerHtml = '';
+    if (Array.isArray(header)) {
+      headerHtml = '<thead><tr>';
+      header.forEach(cell => {
+        headerHtml += `<th>${cell.text || cell}</th>`;
+      });
+      headerHtml += '</tr></thead>';
+    }
+
+    let rowsHtml = '';
+    if (Array.isArray(rows)) {
+      rowsHtml = '<tbody>';
+      rows.forEach(row => {
+        rowsHtml += '<tr>';
+        if (Array.isArray(row)) {
+          row.forEach(cell => {
+            rowsHtml += `<td>${cell.text || cell}</td>`;
+          });
+        }
+        rowsHtml += '</tr>';
+      });
+      rowsHtml += '</tbody>';
+    }
+
+    return `
+      <div class="table-responsive">
+        <table class="markdown-table">
+          ${headerHtml}
+          ${rowsHtml}
+        </table>
+      </div>
+    `;
+  };
+
+  marked.setOptions({
+    renderer,
+    gfm: true,
+    breaks: true
+  });
+
+  return marked;
+}
+
+window.copyCodeBlock = function(btn) {
+  const container = btn.closest('.code-block-container');
+  if (!container) return;
+  const codeEl = container.querySelector('pre code');
+  if (!codeEl) return;
+  const text = codeEl.innerText;
+  navigator.clipboard.writeText(text).then(() => {
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '✔ Copied!';
+    btn.classList.add('copied');
+    setTimeout(() => {
+      btn.innerHTML = originalText;
+      btn.classList.remove('copied');
+    }, 2000);
+  }).catch(() => {});
+};
+
 function formatMarkdown(text) {
   if (!text) return '';
+  if (typeof marked !== 'undefined') {
+    try {
+      setupMarkedRenderer();
+      return marked.parse(text);
+    } catch (err) {
+      console.warn('Marked parsing error, falling back:', err);
+    }
+  }
+
+  // Enhanced Fallback Parser
   return escapeHtml(text)
-    .replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>')
-    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/^### (.*$)/gim, '<h3 style="font-size:15px; margin:10px 0 4px; font-weight:600; color:#f0f6fc;">$1</h3>')
+    .replace(/^## (.*$)/gim, '<h2 style="font-size:17px; margin:12px 0 6px; font-weight:700; color:#f0f6fc;">$1</h2>')
+    .replace(/^# (.*$)/gim, '<h1 style="font-size:19px; margin:14px 0 8px; font-weight:700; color:#f0f6fc;">$1</h1>')
+    .replace(/```([\s\S]*?)```/g, '<div class="code-block-container"><pre><code>$1</code></pre></div>')
+    .replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>')
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
     .replace(/\n/g, '<br>');
 }
