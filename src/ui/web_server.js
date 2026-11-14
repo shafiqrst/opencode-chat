@@ -4,6 +4,7 @@ import path from 'path';
 import { WebSocketServer } from 'ws';
 import { fileURLToPath } from 'url';
 import { VibWebsStore } from '../storage/vibwebs_store.js';
+import { RemoteSSHManager } from '../remote/ssh_client.js';
 
 const MIME_TYPES = {
   '.html': 'text/html',
@@ -30,6 +31,13 @@ export class WebStudioServer {
 
     // Dedicated Native VibWebs Storage Engine
     this.store = new VibWebsStore();
+    this.sshManager = new RemoteSSHManager();
+    if (this.shellOps && typeof this.shellOps.setSSHManager === 'function') {
+      this.shellOps.setSSHManager(this.sshManager);
+    }
+    if (this.agent?.toolRegistry?.fileOps && typeof this.agent.toolRegistry.fileOps.setSSHManager === 'function') {
+      this.agent.toolRegistry.fileOps.setSSHManager(this.sshManager);
+    }
     this.store.registerProject(this.workspaceRoot);
 
     const convos = this.store.getConversationsForWorkspace(this.workspaceRoot);
@@ -358,6 +366,19 @@ export class WebStudioServer {
           providerUsed: result.providerUsed
         });
 
+        // Sync active model in UI if router failed over or switched to another provider
+        if (result.providerUsed) {
+          const currentP = this.router.getCurrentProvider();
+          if (currentP) {
+            this.broadcast({
+              type: 'model_updated',
+              currentModel: currentP.name,
+              model: currentP.model,
+              providerId: currentP.id
+            });
+          }
+        }
+
         this.broadcast({
           type: 'conversations_list_updated',
           conversations: this.getConversationsForWorkspace(this.workspaceRoot)
@@ -369,6 +390,15 @@ export class WebStudioServer {
         });
       } catch (err) {
         console.error('Agent execution error:', err);
+
+        // Persist the error notice turn into conversation history so it doesn't vanish on window refresh
+        this.saveMessageToActiveConvo({
+          role: 'assistant',
+          content: `⚠️ **Execution Paused**: ${err.message}\n\n*All models are temporarily cooling down or waiting for quota reset. Click Retry or send another message when the cooldown finishes.*`,
+          providerUsed: this.router.getCurrentProvider()?.name,
+          timestamp: Date.now()
+        });
+
         this.broadcast({
           type: 'agent_status',
           status: 'idle'
@@ -377,11 +407,15 @@ export class WebStudioServer {
           type: 'error',
           message: err.message
         });
+        this.broadcast({
+          type: 'conversations_list_updated',
+          conversations: this.getConversationsForWorkspace(this.workspaceRoot)
+        });
       }
     }
   }
 
-  handleHttpRequest(req, res) {
+  async handleHttpRequest(req, res) {
     const url = new URL(req.url, `http://${req.headers.host}`);
 
     // API: Get conversation messages
@@ -424,6 +458,70 @@ export class WebStudioServer {
         }
       });
       return;
+    }
+
+    // API: Get models status with cooldowns & reset seconds
+    if (url.pathname === '/api/models' && req.method === 'GET') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      const current = this.router.getCurrentProvider();
+      const providers = this.router.getActiveProviders().map(p => {
+        const remaining = this.router.getCooldownRemainingSeconds(p);
+        const inCooldown = this.router.isProviderInCooldown(p);
+        return {
+          id: p.id,
+          name: p.name,
+          model: p.model,
+          inCooldown,
+          cooldownRemaining: remaining
+        };
+      });
+      return res.end(JSON.stringify({
+        currentModel: current?.name,
+        providers
+      }));
+    }
+
+    // API: Remote SSH Connection
+    if (url.pathname === '/api/ssh/connect' && req.method === 'POST') {
+      let body = '';
+      req.on('data', chunk => { body += chunk; });
+      req.on('end', async () => {
+        try {
+          const options = JSON.parse(body);
+          if (!options.host || !options.username) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            return res.end(JSON.stringify({ error: 'Host and Username are required' }));
+          }
+          const result = await this.sshManager.connect(options);
+          // Register the SSH remote workspace
+          this.store.registerProject(result.uri);
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({
+            success: true,
+            uri: result.uri,
+            config: result.config,
+            projects: this.store.getEnrichedProjectsTree(this.workspaceRoot)
+          }));
+        } catch (err) {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ error: err.message }));
+        }
+      });
+      return;
+    }
+
+    if (url.pathname === '/api/ssh/status' && req.method === 'GET') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({
+        isConnected: this.sshManager.isConnected,
+        config: this.sshManager.config
+      }));
+    }
+
+    if (url.pathname === '/api/ssh/disconnect' && req.method === 'POST') {
+      await this.sshManager.disconnect();
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ success: true }));
     }
 
     // API: System Drives and Folders Browser (Navigate anywhere in computer)
@@ -684,14 +782,21 @@ export class WebStudioServer {
   }
 
   switchWorkspace(newRoot) {
-    const resolved = path.resolve(newRoot);
-    if (!fs.existsSync(resolved)) {
+    const isSSH = typeof newRoot === 'string' && newRoot.startsWith('ssh://');
+    const resolved = isSSH ? newRoot : path.resolve(newRoot);
+    if (!isSSH && !fs.existsSync(resolved)) {
       fs.mkdirSync(resolved, { recursive: true });
     }
     this.workspaceRoot = resolved;
-    this.guardrail.setWorkspaceRoot(resolved);
-    this.shellOps.setWorkspaceRoot(resolved);
-    this.checkpointManager.setWorkspaceRoot(resolved);
+    if (this.guardrail && typeof this.guardrail.setWorkspaceRoot === 'function') {
+      this.guardrail.setWorkspaceRoot(resolved);
+    }
+    if (this.shellOps && typeof this.shellOps.setWorkspaceRoot === 'function') {
+      this.shellOps.setWorkspaceRoot(resolved);
+    }
+    if (this.checkpointManager && typeof this.checkpointManager.setWorkspaceRoot === 'function') {
+      this.checkpointManager.setWorkspaceRoot(resolved);
+    }
     if (this.agent) {
       if (typeof this.agent.setWorkspaceRoot === 'function') {
         this.agent.setWorkspaceRoot(resolved);

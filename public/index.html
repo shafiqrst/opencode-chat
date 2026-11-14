@@ -43,9 +43,27 @@
       </div>
 
       <div class="topbar-right">
-        <button class="topbar-icon-small" title="Options">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="1"></circle><circle cx="12" cy="5" r="1"></circle><circle cx="12" cy="19" r="1"></circle></svg>
-        </button>
+        <!-- Topbar Action Menu with SSH & Options -->
+        <div style="position: relative;">
+          <button class="topbar-icon-small" id="topbarMenuBtn" title="More Options & Connections">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="1"></circle><circle cx="12" cy="5" r="1"></circle><circle cx="12" cy="19" r="1"></circle></svg>
+          </button>
+          <div class="dropdown-popover hidden" id="topbarMenuDropdown">
+            <div class="dropdown-item" id="menuConnectSshBtn">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>
+              <span>Connect Remote SSH</span>
+            </div>
+            <div class="dropdown-item" id="menuBrowseFolderBtn">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path><line x1="12" y1="11" x2="12" y2="17"></line><line x1="9" y1="14" x2="15" y2="14"></line></svg>
+              <span>Browse Local Folder</span>
+            </div>
+            <div class="dropdown-divider"></div>
+            <div class="dropdown-item" id="menuClearConvoBtn">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+              <span>Clear Conversation</span>
+            </div>
+          </div>
+        </div>
         <button class="btn-open-ide" id="toggleEditorBtn">
           <span>Open IDE</span>
         </button>
@@ -81,6 +99,9 @@
         <div class="sidebar-section-header">
           <span class="sec-title">Projects</span>
           <div class="sec-icons">
+            <button class="sec-icon-btn" id="connectSshBtn" title="Connect Remote SSH Folder (Linux VPS, EC2, Cloud)">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>
+            </button>
             <button class="sec-icon-btn" id="browseComputerBtn" title="Browse Any Folder on Computer">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path><line x1="12" y1="11" x2="12" y2="17"></line><line x1="9" y1="14" x2="15" y2="14"></line></svg>
             </button>
@@ -115,32 +136,38 @@
 
         <!-- Fixed Antigravity Input Bar at bottom -->
         <div class="ag-input-dock">
-          <!-- Floating Slash Commands Autocomplete Menu -->
-          <div class="slash-commands-popup hidden" id="slashCommandsPopup">
-            <div class="slash-header">⚡ Slash Actions</div>
-            <div class="slash-item" data-cmd="/undo">
-              <span class="slash-cmd">/undo</span>
-              <span class="slash-desc">Rollback last modified file checkpoint</span>
-            </div>
-            <div class="slash-item" data-cmd="/clear">
-              <span class="slash-cmd">/clear</span>
-              <span class="slash-desc">Reset agent conversation context</span>
-            </div>
-            <div class="slash-item" data-cmd="/test">
-              <span class="slash-cmd">npm test</span>
-              <span class="slash-desc">Run test suite and verify changes</span>
-            </div>
-            <div class="slash-item" data-cmd="/review">
-              <span class="slash-cmd">/review</span>
-              <span class="slash-desc">Switch to file inspection and review pane</span>
-            </div>
-          </div>
-
           <div class="input-card">
             <textarea id="promptInput" rows="1" placeholder="Ask anything, @ to mention, / for actions"></textarea>
             
             <div class="input-card-bottom">
               <div class="input-bottom-left" style="position: relative;">
+                <!-- Slash Actions Menu Trigger -->
+                <button class="cmd-menu-trigger-btn" id="slashMenuTriggerBtn" title="Slash Actions & Quick Commands">
+                  <span class="cmd-slash-icon">/</span>
+                  <span class="cmd-slash-text">Actions</span>
+                </button>
+
+                <!-- Floating Slash Commands Autocomplete Menu -->
+                <div class="slash-commands-popup hidden" id="slashCommandsPopup">
+                  <div class="slash-header">⚡ Slash Actions</div>
+                  <div class="slash-item" data-cmd="/undo">
+                    <span class="slash-cmd">/undo</span>
+                    <span class="slash-desc">Rollback last modified file checkpoint</span>
+                  </div>
+                  <div class="slash-item" data-cmd="/clear">
+                    <span class="slash-cmd">/clear</span>
+                    <span class="slash-desc">Reset agent conversation context</span>
+                  </div>
+                  <div class="slash-item" data-cmd="/test">
+                    <span class="slash-cmd">npm test</span>
+                    <span class="slash-desc">Run test suite and verify changes</span>
+                  </div>
+                  <div class="slash-item" data-cmd="/review">
+                    <span class="slash-cmd">/review</span>
+                    <span class="slash-desc">Switch to file inspection and review pane</span>
+                  </div>
+                </div>
+
                 <button class="add-context-btn" title="Add File or Context">+</button>
                 <div class="model-picker-pill" id="modelPickerPill" title="Change Model">
                   <span class="model-name-text" id="modelName">Gemini 3.8 Flash</span>
@@ -281,6 +308,62 @@
           <div class="dialog-actions">
             <button class="btn-cancel" id="browserCancelBtn">Cancel</button>
             <button class="btn-select" id="browserSelectBtn">Open Project Folder</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Remote SSH Connection Modal -->
+    <div class="modal-overlay hidden" id="sshModal">
+      <div class="browser-dialog" style="max-width: 520px;">
+        <div class="dialog-header">
+          <div class="dialog-title">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>
+            <span>Connect Remote SSH Folder</span>
+          </div>
+          <button class="close-dialog-btn" id="closeSshModalBtn">✕</button>
+        </div>
+
+        <div style="padding: 16px 20px; display: flex; flex-direction: column; gap: 12px;">
+          <div style="display: flex; gap: 10px;">
+            <div style="flex: 3;">
+              <label style="font-size: 11px; color: var(--ag-text-muted); display: block; margin-bottom: 4px;">Host / IP Address</label>
+              <input type="text" id="sshHostInput" class="current-path-input" placeholder="e.g. 192.168.1.50 or ec2-xx.aws.com" style="width: 100%;">
+            </div>
+            <div style="flex: 1;">
+              <label style="font-size: 11px; color: var(--ag-text-muted); display: block; margin-bottom: 4px;">Port</label>
+              <input type="number" id="sshPortInput" class="current-path-input" value="22" style="width: 100%;">
+            </div>
+          </div>
+
+          <div>
+            <label style="font-size: 11px; color: var(--ag-text-muted); display: block; margin-bottom: 4px;">Username</label>
+            <input type="text" id="sshUserInput" class="current-path-input" placeholder="e.g. ubuntu, root, ec2-user" style="width: 100%;">
+          </div>
+
+          <div>
+            <label style="font-size: 11px; color: var(--ag-text-muted); display: block; margin-bottom: 4px;">Password (or Private Key)</label>
+            <input type="password" id="sshPasswordInput" class="current-path-input" placeholder="Server password (leave empty if using SSH key)" style="width: 100%;">
+          </div>
+
+          <div>
+            <label style="font-size: 11px; color: var(--ag-text-muted); display: block; margin-bottom: 4px;">Private Key Path (Optional)</label>
+            <input type="text" id="sshKeyPathInput" class="current-path-input" placeholder="e.g. C:\Users\shafi\.ssh\id_rsa" style="width: 100%;">
+          </div>
+
+          <div>
+            <label style="font-size: 11px; color: var(--ag-text-muted); display: block; margin-bottom: 4px;">Remote Folder Path</label>
+            <input type="text" id="sshRemotePathInput" class="current-path-input" value="/var/www/project" placeholder="e.g. /home/ubuntu/app" style="width: 100%;">
+          </div>
+
+          <div id="sshStatusMsg" style="font-size: 12px; color: var(--ag-text-muted); min-height: 18px;"></div>
+        </div>
+
+        <div class="dialog-footer">
+          <div></div>
+          <div class="dialog-actions">
+            <button class="btn-cancel" id="sshCancelBtn">Cancel</button>
+            <button class="btn-select" id="sshConnectSubmitBtn">Connect Remote Project</button>
           </div>
         </div>
       </div>

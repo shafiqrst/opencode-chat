@@ -254,6 +254,16 @@ function handleServerMessage(data) {
       renderStoredMessages(data.messages || []);
       break;
 
+    case 'failover_alert':
+      const waitNotice = data.retrySeconds ? ` (waiting ~${data.retrySeconds}s for reset)` : '';
+      appendTerminalLine(`⚡ Model Failover: Switched from ${data.previous?.name || 'current model'} to ${data.next?.name || 'next model'}. Reason: ${data.reason || 'Rate limit'}${waitNotice}`);
+      updateLiveThinking(`⚡ Switched to ${data.next?.name || 'next model'} (${data.reason || 'rate limit'})`);
+      if (data.next?.name) {
+        updateModelDisplay(data.next.name);
+        renderModelDropdownOptions(cachedProviders, data.next.name);
+      }
+      break;
+
     case 'response':
       hideLiveThinking();
       setSendButtonLoading(false);
@@ -292,8 +302,14 @@ function renderStoredMessages(messages) {
 }
 
 function updateBreadcrumbs(root) {
-  activeWorkspaceRoot = root;
-  const name = root.split(/[\\/]/).filter(Boolean).pop() || root;
+  activeWorkspaceRoot = root || '';
+  let name = root || '';
+  if (name.startsWith('ssh://')) {
+    const parts = name.replace(/^ssh:\/\/[^@]+@/, '').split(/[:/]/).filter(Boolean);
+    name = '🌐 ' + (parts[parts.length - 1] || parts[0] || 'remote-ssh');
+  } else {
+    name = name.split(/[\\/]/).filter(Boolean).pop() || name;
+  }
   if (bcProjectName) bcProjectName.textContent = name;
 }
 
@@ -311,12 +327,17 @@ function renderProjectsSidebar(projects, activePath, conversations = []) {
     const group = document.createElement('div');
     group.className = 'project-group';
 
+    const isRemoteSSH = p.path && p.path.startsWith('ssh://');
+    const folderIcon = isRemoteSSH ? '🌐' : '📁';
+    const remoteBadge = isRemoteSSH ? '<span style="font-size:10px; color:#58a6ff; margin-left:auto; font-family:var(--ag-font-mono);">SSH</span>' : '';
+
     const header = document.createElement('div');
     header.className = `project-folder-header ${isProjectActive ? 'active' : ''}`;
     header.innerHTML = `
-      <div class="folder-title-left" title="${escapeHtml(p.path)}">
-        <span class="folder-icon">📁</span>
-        <span class="folder-name">${escapeHtml(p.name)}</span>
+      <div class="folder-title-left" title="${escapeHtml(p.path)}" style="width: 100%; display: flex; align-items: center; gap: 6px;">
+        <span class="folder-icon">${folderIcon}</span>
+        <span class="folder-name" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeHtml(p.name)}</span>
+        ${remoteBadge}
       </div>
     `;
 
@@ -536,6 +557,129 @@ if (browserSelectBtn) {
   });
 }
 
+// Topbar Options Menu Handlers
+const topbarMenuBtn = document.getElementById('topbarMenuBtn');
+const topbarMenuDropdown = document.getElementById('topbarMenuDropdown');
+const menuConnectSshBtn = document.getElementById('menuConnectSshBtn');
+const menuBrowseFolderBtn = document.getElementById('menuBrowseFolderBtn');
+const menuClearConvoBtn = document.getElementById('menuClearConvoBtn');
+
+if (topbarMenuBtn && topbarMenuDropdown) {
+  topbarMenuBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    topbarMenuDropdown.classList.toggle('hidden');
+  });
+
+  document.addEventListener('click', (e) => {
+    if (!topbarMenuDropdown.contains(e.target) && e.target !== topbarMenuBtn) {
+      topbarMenuDropdown.classList.add('hidden');
+    }
+  });
+}
+
+if (menuConnectSshBtn) {
+  menuConnectSshBtn.addEventListener('click', () => {
+    topbarMenuDropdown?.classList.add('hidden');
+    if (sshModal) {
+      sshModal.classList.remove('hidden');
+      if (sshStatusMsg) sshStatusMsg.textContent = '';
+    }
+  });
+}
+
+if (menuBrowseFolderBtn) {
+  menuBrowseFolderBtn.addEventListener('click', () => {
+    topbarMenuDropdown?.classList.add('hidden');
+    openFolderBrowser('D:\\');
+  });
+}
+
+if (menuClearConvoBtn) {
+  menuClearConvoBtn.addEventListener('click', () => {
+    topbarMenuDropdown?.classList.add('hidden');
+    messagesContainer.innerHTML = '';
+    if (ws) ws.send(JSON.stringify({ type: 'new_conversation' }));
+  });
+}
+
+// Remote SSH Connection Handlers
+const connectSshBtn = document.getElementById('connectSshBtn');
+const sshModal = document.getElementById('sshModal');
+const closeSshModalBtn = document.getElementById('closeSshModalBtn');
+const sshCancelBtn = document.getElementById('sshCancelBtn');
+const sshConnectSubmitBtn = document.getElementById('sshConnectSubmitBtn');
+const sshHostInput = document.getElementById('sshHostInput');
+const sshPortInput = document.getElementById('sshPortInput');
+const sshUserInput = document.getElementById('sshUserInput');
+const sshPasswordInput = document.getElementById('sshPasswordInput');
+const sshKeyPathInput = document.getElementById('sshKeyPathInput');
+const sshRemotePathInput = document.getElementById('sshRemotePathInput');
+const sshStatusMsg = document.getElementById('sshStatusMsg');
+
+if (connectSshBtn) {
+  connectSshBtn.addEventListener('click', () => {
+    if (sshModal) {
+      sshModal.classList.remove('hidden');
+      if (sshStatusMsg) sshStatusMsg.textContent = '';
+    }
+  });
+}
+
+if (closeSshModalBtn) closeSshModalBtn.addEventListener('click', () => sshModal?.classList.add('hidden'));
+if (sshCancelBtn) sshCancelBtn.addEventListener('click', () => sshModal?.classList.add('hidden'));
+
+if (sshConnectSubmitBtn) {
+  sshConnectSubmitBtn.addEventListener('click', async () => {
+    const host = sshHostInput?.value.trim();
+    const port = sshPortInput?.value.trim() || '22';
+    const username = sshUserInput?.value.trim();
+    const password = sshPasswordInput?.value || '';
+    const privateKeyPath = sshKeyPathInput?.value.trim() || '';
+    const remotePath = sshRemotePathInput?.value.trim() || '/';
+
+    if (!host || !username) {
+      if (sshStatusMsg) {
+        sshStatusMsg.textContent = '⚠️ Host and Username are required.';
+        sshStatusMsg.style.color = '#f85149';
+      }
+      return;
+    }
+
+    if (sshStatusMsg) {
+      sshStatusMsg.textContent = `Connecting to ${username}@${host}:${port}...`;
+      sshStatusMsg.style.color = '#58a6ff';
+    }
+    sshConnectSubmitBtn.disabled = true;
+
+    try {
+      const res = await fetch('/api/ssh/connect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ host, port, username, password, privateKeyPath, remotePath })
+      });
+      const data = await res.json();
+      sshConnectSubmitBtn.disabled = false;
+
+      if (data.success) {
+        if (sshModal) sshModal.classList.add('hidden');
+        appendTerminalLine(`✔ Connected to remote SSH workspace: ${data.uri}`);
+        await switchWorkspace(data.uri);
+      } else {
+        if (sshStatusMsg) {
+          sshStatusMsg.textContent = `❌ Connection failed: ${data.error || 'Unknown error'}`;
+          sshStatusMsg.style.color = '#f85149';
+        }
+      }
+    } catch (err) {
+      sshConnectSubmitBtn.disabled = false;
+      if (sshStatusMsg) {
+        sshStatusMsg.textContent = `❌ Network error: ${err.message}`;
+        sshStatusMsg.style.color = '#f85149';
+      }
+    }
+  });
+}
+
 // New Conversation button
 if (newConvoBtn) {
   newConvoBtn.addEventListener('click', () => {
@@ -612,6 +756,25 @@ function sendMessage() {
 sendBtn.addEventListener('click', sendMessage);
 // Slash Commands & Input Auto-Grow
 const slashPopup = document.getElementById('slashCommandsPopup');
+const slashMenuTriggerBtn = document.getElementById('slashMenuTriggerBtn');
+
+if (slashMenuTriggerBtn && slashPopup) {
+  slashMenuTriggerBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    slashPopup.classList.toggle('hidden');
+    if (!slashPopup.classList.contains('hidden')) {
+      document.querySelectorAll('.slash-item').forEach(item => {
+        item.style.display = 'flex';
+      });
+    }
+  });
+
+  document.addEventListener('click', (e) => {
+    if (slashPopup && !slashPopup.contains(e.target) && e.target !== slashMenuTriggerBtn) {
+      slashPopup.classList.add('hidden');
+    }
+  });
+}
 
 if (promptInput) {
   promptInput.addEventListener('input', () => {
@@ -1077,16 +1240,7 @@ function renderModelDropdownOptions(providers, currentModelName) {
   if (!modelOptionsList) return;
   modelOptionsList.innerHTML = '';
 
-  const defaultList = [
-    { name: 'Groq (Qwen 3.8 27B Coder)', id: 'groq-qwen', model: 'qwen/qwen3.8-27b', badge: 'fast' },
-    { name: 'Groq (OpenAI GPT-OSS 120B)', id: 'groq-gpt', model: 'openai/gpt-oss-120b', badge: 'pro' },
-    { name: 'OpenRouter (Nemotron 3.5 Lightning)', id: 'openrouter-nemotron', model: 'nvidia/nemotron-3.5-lightning:free', badge: 'free' },
-    { name: 'OpenRouter (Ernie 5.5 Flash)', id: 'openrouter-ernie', model: 'baidu/ernie-5.5-flash-preview:free', badge: 'free' },
-    { name: 'NVIDIA NIM (DeepSeek V4.1 Flash)', id: 'nvidia-deepseek', model: 'deepseek-ai/deepseek-v4.1-flash', badge: 'fast' },
-    { name: 'Local Ollama (Offline)', id: 'ollama-local', model: 'qwen2.5-coder:7b', badge: 'fast' }
-  ];
-
-  const list = (providers && providers.length > 0) ? providers : defaultList;
+  const list = (providers && providers.length > 0) ? providers : cachedProviders;
 
   list.forEach(p => {
     const isSelected = currentModelName && (
@@ -1094,15 +1248,39 @@ function renderModelDropdownOptions(providers, currentModelName) {
       p.name.toLowerCase().includes(currentModelName.toLowerCase())
     );
 
+    const inCooldown = Boolean(p.inCooldown || (p.cooldownRemaining && p.cooldownRemaining > 0));
+    const remainingSec = p.cooldownRemaining || 0;
+
+    let badgeText = 'ACTIVE';
+    let badgeClass = 'badge-active';
+
+    if (inCooldown && remainingSec > 0) {
+      if (remainingSec >= 3600) {
+        const hours = Math.round(remainingSec / 3600);
+        badgeText = `WAIT ~${hours}h`;
+      } else if (remainingSec >= 60) {
+        const mins = Math.ceil(remainingSec / 60);
+        badgeText = `WAIT ${mins}m`;
+      } else {
+        badgeText = `WAIT ${remainingSec}s`;
+      }
+      badgeClass = 'badge-cooldown';
+    } else if (inCooldown) {
+      badgeText = 'RESETTING';
+      badgeClass = 'badge-cooldown';
+    } else if (p.badge) {
+      badgeText = p.badge.toUpperCase();
+    }
+
     const item = document.createElement('div');
-    item.className = `model-option-item ${isSelected ? 'active' : ''}`;
+    item.className = `model-option-item ${isSelected ? 'active' : ''} ${inCooldown ? 'item-cooldown' : ''}`;
     item.innerHTML = `
       <div class="model-opt-info">
         <span class="model-opt-name">${escapeHtml(p.name)}</span>
         <span class="model-opt-sub">${escapeHtml(p.model || '')}</span>
       </div>
       <div class="model-opt-right">
-        <span class="model-badge ${p.badge || 'free'}">${(p.badge || 'ACTIVE').toUpperCase()}</span>
+        <span class="model-badge ${badgeClass}">${escapeHtml(badgeText)}</span>
         <span class="model-opt-check">${isSelected ? '✔' : ''}</span>
       </div>
     `;
@@ -1124,10 +1302,26 @@ function renderModelDropdownOptions(providers, currentModelName) {
   });
 }
 
+// Refresh models status and cooldown timers when opening dropdown
+async function refreshModelStatusList() {
+  try {
+    const res = await fetch('/api/models');
+    const data = await res.json();
+    if (data && Array.isArray(data.providers)) {
+      cachedProviders = data.providers;
+      renderModelDropdownOptions(data.providers, data.currentModel || modelName?.textContent);
+    }
+  } catch {}
+}
+
 if (modelPickerPill) {
-  modelPickerPill.addEventListener('click', (e) => {
+  modelPickerPill.addEventListener('click', async (e) => {
     e.stopPropagation();
     if (modelDropdownMenu) {
+      const willOpen = modelDropdownMenu.classList.contains('hidden');
+      if (willOpen) {
+        await refreshModelStatusList();
+      }
       modelDropdownMenu.classList.toggle('hidden');
     }
   });

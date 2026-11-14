@@ -3,14 +3,28 @@ import path from 'path';
 
 export class ShellOperations {
   constructor(workspaceRoot, guardrail, options = {}) {
-    this.workspaceRoot = path.resolve(workspaceRoot);
+    this.workspaceRoot = typeof workspaceRoot === 'string' && workspaceRoot.startsWith('ssh://') ? workspaceRoot : path.resolve(workspaceRoot);
     this.guardrail = guardrail;
     this.executionMode = options.executionMode || 'CONFIRM'; // 'AUTO' or 'CONFIRM'
     this.confirmCallback = options.confirmCallback || null;
+    this.sshManager = options.sshManager || null;
   }
 
   setWorkspaceRoot(newRoot) {
-    this.workspaceRoot = path.resolve(newRoot);
+    if (typeof newRoot === 'string' && newRoot.startsWith('ssh://')) {
+      this.workspaceRoot = newRoot;
+    } else {
+      this.workspaceRoot = path.resolve(newRoot);
+    }
+  }
+
+  setSSHManager(sshManager) {
+    this.sshManager = sshManager;
+  }
+
+  isRemote() {
+    return (typeof this.workspaceRoot === 'string' && this.workspaceRoot.startsWith('ssh://')) ||
+           (this.sshManager && this.sshManager.isConnected);
   }
 
   setExecutionMode(mode) {
@@ -29,6 +43,19 @@ export class ShellOperations {
       const allowed = await this.confirmCallback(command);
       if (!allowed) {
         return `[CANCELLED] Execution denied by user: "${command}"`;
+      }
+    }
+
+    // 3. Remote SSH Execution
+    if (this.isRemote() && this.sshManager && this.sshManager.isConnected) {
+      try {
+        const res = await this.sshManager.runCommand(command, workingDir === '.' ? null : workingDir);
+        let output = res.stdout;
+        if (res.stderr) output += (output ? '\n[STDERR]\n' : '') + res.stderr;
+        if (res.exitCode !== 0) output += `\n[REMOTE EXIT CODE ${res.exitCode}]`;
+        return output || '[Remote command completed with no output]';
+      } catch (err) {
+        return `[ERROR] Remote command failed: ${err.message}`;
       }
     }
 

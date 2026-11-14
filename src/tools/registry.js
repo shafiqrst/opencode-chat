@@ -14,22 +14,22 @@ export class ToolRegistry {
     try {
       switch (name) {
         case 'read_file':
-          return this.fileOps.readFile(args.path, args.start_line, args.end_line);
+          return await this.fileOps.readFile(args.path, args.start_line, args.end_line);
 
         case 'write_file':
-          return this.fileOps.writeFile(args.path, args.content);
+          return await this.fileOps.writeFile(args.path, args.content);
 
         case 'edit_file':
-          return this.fileOps.editFile(args.path, args.target, args.replacement);
+          return await this.fileOps.editFile(args.path, args.target, args.replacement);
 
         case 'run_command':
           return await this.shellOps.runCommand(args.command, args.working_dir);
 
         case 'list_dir':
-          return this.fileOps.listDir(args.path, args.max_depth);
+          return await this.fileOps.listDir(args.path, args.max_depth);
 
         case 'search_files':
-          return this.fileOps.searchFiles(args.query, args.dir_path);
+          return await this.fileOps.searchFiles(args.query, args.dir_path);
 
         default:
           return `[ERROR] Unknown tool: "${name}"`;

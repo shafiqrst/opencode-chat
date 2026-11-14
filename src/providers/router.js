@@ -65,12 +65,29 @@ export class ModelRouter {
         priority: 1
       });
       list.push({
+        id: 'groq-gpt-20b',
+        name: 'Groq (OpenAI GPT-OSS 20B)',
+        url: 'https://api.groq.com/openai/v1/chat/completions',
+        key: config.GROQ_API_KEY,
+        model: 'openai/gpt-oss-20b',
+        priority: 2
+      });
+      list.push({
         id: 'groq-gpt-oss',
         name: 'Groq (OpenAI GPT-OSS 120B)',
         url: 'https://api.groq.com/openai/v1/chat/completions',
         key: config.GROQ_API_KEY,
         model: 'openai/gpt-oss-120b',
-        priority: 2
+        priority: 3
+      });
+      list.push({
+        id: 'groq-allam',
+        name: 'Groq (Allam 2 7B)',
+        url: 'https://api.groq.com/openai/v1/chat/completions',
+        key: config.GROQ_API_KEY,
+        model: 'allam-2-7b',
+        supportsTools: false,
+        priority: 4
       });
     }
 
@@ -82,7 +99,15 @@ export class ModelRouter {
         url: 'https://openrouter.ai/api/v1/chat/completions',
         key: config.OPENROUTER_API_KEY,
         model: 'nvidia/nemotron-3.5-lightning:free',
-        priority: 3
+        priority: 4
+      });
+      list.push({
+        id: 'openrouter-gemma-31b',
+        name: 'OpenRouter (Free Google Gemma 4 31B)',
+        url: 'https://openrouter.ai/api/v1/chat/completions',
+        key: config.OPENROUTER_API_KEY,
+        model: 'google/gemma-4-31b-it:free',
+        priority: 5
       });
       list.push({
         id: 'openrouter-nemotron-super',
@@ -90,7 +115,7 @@ export class ModelRouter {
         url: 'https://openrouter.ai/api/v1/chat/completions',
         key: config.OPENROUTER_API_KEY,
         model: 'nvidia/nemotron-3.5-super-vl:free',
-        priority: 4
+        priority: 6
       });
       list.push({
         id: 'openrouter-ernie',
@@ -98,7 +123,7 @@ export class ModelRouter {
         url: 'https://openrouter.ai/api/v1/chat/completions',
         key: config.OPENROUTER_API_KEY,
         model: 'baidu/ernie-5.5-flash-preview:free',
-        priority: 5
+        priority: 7
       });
     }
 
@@ -188,33 +213,89 @@ export class ModelRouter {
     }
 
     let attempts = 0;
-    const maxAttempts = this.providers.length;
+    const maxAttempts = this.providers.length * 2;
     const errors = [];
+    const startTime = Date.now();
+    const MAX_WAIT_DURATION_MS = 30 * 60 * 1000; // Wait up to 30 minutes as requested
 
     while (attempts < maxAttempts) {
-      const provider = this.providers[this.currentIndex % this.providers.length];
+      // 1. If this provider is currently in cooldown, try to find an available active provider first
+      let provider = this.providers[this.currentIndex % this.providers.length];
+      let foundAvailable = false;
 
-      // If this provider is currently waiting out a cooldown, skip to next unless all are waiting
-      if (this.isProviderInCooldown(provider) && attempts < maxAttempts - 1) {
-        this.currentIndex = (this.currentIndex + 1) % this.providers.length;
-        attempts++;
+      for (let i = 0; i < this.providers.length; i++) {
+        const candidate = this.providers[(this.currentIndex + i) % this.providers.length];
+        if (!this.isProviderInCooldown(candidate)) {
+          this.currentIndex = (this.currentIndex + i) % this.providers.length;
+          provider = candidate;
+          foundAvailable = true;
+          break;
+        }
+      }
+
+      // 2. If NO active model is ready (all are in cooldown), automatically wait for the earliest model
+      if (!foundAvailable) {
+        if (Date.now() - startTime >= MAX_WAIT_DURATION_MS) {
+          throw new Error('All configured providers exhausted: Exceeded maximum wait limit of 30 minutes.');
+        }
+
+        let minWait = 999999;
+        let bestProvider = null;
+        for (const p of this.providers) {
+          const rem = this.getCooldownRemainingSeconds(p);
+          if (rem > 0 && rem < minWait) {
+            minWait = rem;
+            bestProvider = p;
+          }
+        }
+
+        // Cap sleep slice to at most 60 seconds per iteration so we keep refreshing
+        const sleepSec = (minWait > 0 && minWait < 999999) ? Math.min(60, minWait) : 5;
+        if (bestProvider && this.onFailoverCallback) {
+          this.onFailoverCallback({
+            previous: provider,
+            reason: `All models cooling down: waiting ${sleepSec}s for ${bestProvider.name} to reset`,
+            retrySeconds: sleepSec,
+            next: bestProvider
+          });
+        }
+
+        await new Promise(resolve => setTimeout(resolve, (sleepSec + 1) * 1000));
+        if (bestProvider) {
+          this.cooldowns.delete(bestProvider.id);
+          this.setProviderByName(bestProvider.id);
+        }
+        attempts = 0; // Reset attempts to try again
         continue;
       }
 
       try {
+        // Sanitize messages before sending to OpenAI/Groq compatible endpoints:
+        // Strip non-standard UI properties (e.g. timestamp, step, steps, etc.)
+        const cleanMessages = messages.map(m => {
+          const item = {
+            role: m.role,
+            content: m.content !== undefined ? m.content : null
+          };
+          if (m.name) item.name = m.name;
+          if (m.tool_call_id) item.tool_call_id = m.tool_call_id;
+          if (m.tool_calls) item.tool_calls = m.tool_calls;
+          return item;
+        });
+
         const body = {
           model: provider.model,
-          messages,
+          messages: cleanMessages,
           temperature,
         };
 
-        if (tools && tools.length > 0) {
+        if (tools && tools.length > 0 && provider.supportsTools !== false) {
           body.tools = tools;
           body.tool_choice = 'auto';
         }
 
         const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 60000); // 60s timeout
+        const timeout = setTimeout(() => controller.abort(), 20000); // 20s timeout (faster failover)
 
         const headers = {
           'Content-Type': 'application/json',
@@ -239,23 +320,28 @@ export class ModelRouter {
           const status = response.status;
           const errorText = await response.text();
 
-          // Check if rate limited (429) or server overloaded (503, 502, 504)
-          if (status === 429 || status === 503 || status === 502 || status === 504) {
-            let retrySeconds = 60; // default 60s window
+          // Check if rate limited (429), token limit exceeded (413), or server overloaded (503, 502, 504)
+          if (status === 429 || status === 413 || status === 503 || status === 502 || status === 504) {
+            let retrySeconds = status === 413 ? 30 : 60; // 30s pause on token limit spike
             const retryHeader = response.headers.get('retry-after');
             const resetHeader = response.headers.get('x-ratelimit-reset');
 
             if (retryHeader) {
               const parsed = parseInt(retryHeader, 10);
               if (!isNaN(parsed) && parsed > 0) {
-                retrySeconds = parsed;
+                retrySeconds = Math.min(3600, parsed);
               }
             } else if (resetHeader) {
-              const resetTs = parseFloat(resetHeader);
-              if (resetTs > 1000000000) {
-                retrySeconds = Math.max(5, Math.ceil((resetTs * 1000 - Date.now()) / 1000));
-              } else if (resetTs > 0) {
-                retrySeconds = Math.ceil(resetTs);
+              const resetVal = parseFloat(resetHeader);
+              // OpenRouter sends absolute epoch timestamp in milliseconds or seconds
+              if (resetVal > 1000000000000) {
+                // Milliseconds epoch timestamp
+                retrySeconds = Math.max(5, Math.ceil((resetVal - Date.now()) / 1000));
+              } else if (resetVal > 1000000000) {
+                // Seconds epoch timestamp
+                retrySeconds = Math.max(5, Math.ceil((resetVal * 1000 - Date.now()) / 1000));
+              } else if (resetVal > 0) {
+                retrySeconds = Math.ceil(resetVal);
               }
             }
 
@@ -264,7 +350,9 @@ export class ModelRouter {
             this.cooldowns.set(provider.id, expireAt);
 
             const resetTime = new Date(expireAt).toLocaleTimeString();
-            const reason = status === 429 ? 'Rate Limit (429)' : `Server Overloaded (${status})`;
+            let reason = `Server Overloaded (${status})`;
+            if (status === 429) reason = 'Rate Limit (429)';
+            if (status === 413) reason = `Token Limit Reached (413 - auto reset in ${retrySeconds}s)`;
             errors.push(`${provider.name}: ${reason}`);
 
             if (this.onFailoverCallback) {

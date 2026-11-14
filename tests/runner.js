@@ -237,6 +237,17 @@ async function runTests() {
     assert.strictEqual(meta.workspaceRoot, 'D:\\equality-share');
   });
 
+  // 9. Remote SSH Manager Test
+  test('RemoteSSHManager: Instantiates properly and reports disconnected state initially', async () => {
+    const { RemoteSSHManager } = await import('../src/remote/ssh_client.js');
+    const ssh = new RemoteSSHManager();
+    assert.strictEqual(ssh.isConnected, false);
+    assert.strictEqual(ssh.client, null);
+    assert.strictEqual(ssh.sftp, null);
+    await ssh.disconnect();
+    assert.strictEqual(ssh.isConnected, false);
+  });
+
   // Clean test dir
   if (fs.existsSync(testDir)) {
     fs.rmSync(testDir, { recursive: true, force: true });

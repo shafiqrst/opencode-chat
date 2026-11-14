@@ -223,8 +223,7 @@ export class VibWebsStore {
             messages.push({
               role: obj.role,
               content: obj.content,
-              timestamp: obj.timestamp || (obj.created_at ? new Date(obj.created_at).getTime() : Date.now()),
-              step: obj.step || null
+              timestamp: obj.timestamp || (obj.created_at ? new Date(obj.created_at).getTime() : Date.now())
             });
           } else if (obj.type === 'USER_INPUT' && obj.content) {
             messages.push({

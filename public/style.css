@@ -933,7 +933,9 @@ body.antigravity-layout {
   backdrop-filter: blur(4px);
 }
 
-.modal-overlay.hidden { display: none; }
+.hidden {
+  display: none !important;
+}
 
 .browser-dialog {
   width: 580px;
@@ -1317,9 +1319,10 @@ body.antigravity-layout {
   padding: 2px 6px;
   border-radius: 4px;
   font-weight: 600;
+  white-space: nowrap;
 }
 
-.model-badge.free {
+.model-badge.free, .model-badge.badge-active {
   background: rgba(16, 185, 129, 0.15);
   color: #10b981;
 }
@@ -1327,6 +1330,22 @@ body.antigravity-layout {
 .model-badge.fast {
   background: rgba(245, 158, 11, 0.15);
   color: #f59e0b;
+}
+
+.model-badge.badge-cooldown {
+  background: rgba(248, 81, 73, 0.15);
+  color: #f85149;
+  border: 1px solid rgba(248, 81, 73, 0.3);
+  animation: pulseCooldown 1.5s infinite ease-in-out;
+}
+
+.model-option-item.item-cooldown {
+  opacity: 0.75;
+}
+
+@keyframes pulseCooldown {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
 }
 
 .model-opt-check {
@@ -1596,18 +1615,98 @@ body.antigravity-layout {
 /* 5. FLOATING SLASH COMMANDS AUTOCOMPLETE POPUP */
 .slash-commands-popup {
   position: absolute;
-  bottom: calc(100% + 8px);
-  left: 32px;
-  width: 380px;
-  max-width: calc(100vw - 64px);
+  bottom: calc(100% + 12px);
+  left: 0;
+  width: 360px;
+  max-width: 90vw;
+  max-height: 280px;
   background: #161b22;
   border: 1px solid #30363d;
   border-radius: 10px;
-  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.05);
-  overflow: hidden;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.08);
+  overflow-y: auto;
   z-index: 1000;
   backdrop-filter: blur(12px);
   pointer-events: auto;
+}
+
+/* Slash Trigger Button */
+.cmd-menu-trigger-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--ag-text-secondary);
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.cmd-menu-trigger-btn:hover {
+  background: rgba(88, 166, 255, 0.12);
+  color: #58a6ff;
+  border-color: rgba(88, 166, 255, 0.3);
+}
+
+.cmd-slash-icon {
+  font-family: var(--ag-font-mono);
+  font-weight: 700;
+  color: #58a6ff;
+  font-size: 12px;
+}
+
+.cmd-slash-text {
+  font-weight: 500;
+}
+
+/* Topbar Dropdown Menu */
+.dropdown-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 210px;
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.05);
+  padding: 4px;
+  z-index: 1000;
+  backdrop-filter: blur(12px);
+}
+
+.dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  color: #c9d1d9;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.dropdown-item:hover {
+  background: rgba(88, 166, 255, 0.12);
+  color: #58a6ff;
+}
+
+.dropdown-item svg {
+  color: #8b949e;
+  flex-shrink: 0;
+}
+
+.dropdown-item:hover svg {
+  color: #58a6ff;
+}
+
+.dropdown-divider {
+  height: 1px;
+  background: #21262d;
+  margin: 4px 0;
 }
 
 .slash-header {

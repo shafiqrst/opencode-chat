@@ -2,23 +2,57 @@ import fs from 'fs';
 import path from 'path';
 
 export class FileOperations {
-  constructor(workspaceRoot, guardrail, checkpointManager) {
-    this.workspaceRoot = path.resolve(workspaceRoot);
+  constructor(workspaceRoot, guardrail, checkpointManager, sshManager = null) {
+    this.workspaceRoot = workspaceRoot ? (workspaceRoot.startsWith('ssh://') ? workspaceRoot : path.resolve(workspaceRoot)) : process.cwd();
     this.guardrail = guardrail;
     this.checkpointManager = checkpointManager;
+    this.sshManager = sshManager;
   }
 
   setWorkspaceRoot(newRoot) {
-    this.workspaceRoot = path.resolve(newRoot);
+    if (typeof newRoot === 'string' && newRoot.startsWith('ssh://')) {
+      this.workspaceRoot = newRoot;
+    } else {
+      this.workspaceRoot = path.resolve(newRoot);
+    }
+  }
+
+  setSSHManager(sshManager) {
+    this.sshManager = sshManager;
+  }
+
+  isRemote() {
+    return (typeof this.workspaceRoot === 'string' && this.workspaceRoot.startsWith('ssh://')) ||
+           (this.sshManager && this.sshManager.isConnected);
   }
 
   resolve(p) {
+    if (this.isRemote()) {
+      return p.startsWith('/') ? p : `/${p}`;
+    }
     return path.resolve(this.workspaceRoot, p);
   }
 
   readFile(filePath, startLine = 1, endLine = null) {
     const check = this.guardrail.isPathAllowed(filePath);
     if (!check.safe) return `[SECURITY ERROR] ${check.reason}`;
+
+    if (this.isRemote() && this.sshManager && this.sshManager.isConnected) {
+      return (async () => {
+        try {
+          const content = await this.sshManager.readFile(filePath);
+          const lines = content.split('\n');
+          const total = lines.length;
+          const start = Math.max(1, parseInt(startLine, 10) || 1);
+          const end = endLine ? Math.min(total, parseInt(endLine, 10)) : Math.min(total, start + 799);
+          const sliced = lines.slice(start - 1, end);
+          const numbered = sliced.map((line, idx) => `${start + idx} | ${line}`).join('\n');
+          return `[REMOTE FILE: ${filePath} (lines ${start}-${end} of ${total})]\n${numbered}`;
+        } catch (err) {
+          return `[ERROR] Remote read failed: ${err.message}`;
+        }
+      })();
+    }
 
     const fullPath = this.resolve(filePath);
     if (!fs.existsSync(fullPath)) {
@@ -51,6 +85,18 @@ export class FileOperations {
     const check = this.guardrail.isPathAllowed(filePath);
     if (!check.safe) return `[SECURITY ERROR] ${check.reason}`;
 
+    if (this.isRemote() && this.sshManager && this.sshManager.isConnected) {
+      return (async () => {
+        try {
+          await this.sshManager.writeFile(filePath, content);
+          const lines = content.split('\n').length;
+          return `[REMOTE SUCCESS] Wrote ${lines} lines to remote "${filePath}".`;
+        } catch (err) {
+          return `[ERROR] Remote write failed: ${err.message}`;
+        }
+      })();
+    }
+
     const fullPath = this.resolve(filePath);
     try {
       this.checkpointManager.recordPreModification(fullPath);
@@ -69,6 +115,30 @@ export class FileOperations {
   editFile(filePath, target, replacement) {
     const check = this.guardrail.isPathAllowed(filePath);
     if (!check.safe) return `[SECURITY ERROR] ${check.reason}`;
+
+    if (this.isRemote() && this.sshManager && this.sshManager.isConnected) {
+      return (async () => {
+        try {
+          const original = await this.sshManager.readFile(filePath);
+          if (original.includes(target)) {
+            const updated = original.replace(target, replacement);
+            await this.sshManager.writeFile(filePath, updated);
+            return `[REMOTE SUCCESS] Exact match replaced in remote "${filePath}".`;
+          }
+          const normOrig = original.replace(/\r\n/g, '\n');
+          const normTarget = target.replace(/\r\n/g, '\n');
+          if (normOrig.includes(normTarget)) {
+            const normRepl = replacement.replace(/\r\n/g, '\n');
+            const updated = normOrig.replace(normTarget, normRepl);
+            await this.sshManager.writeFile(filePath, updated);
+            return `[REMOTE SUCCESS] Replaced in remote "${filePath}" (normalized line-endings).`;
+          }
+          return `[ERROR] Target string not found in remote "${filePath}".`;
+        } catch (err) {
+          return `[ERROR] Remote edit failed: ${err.message}`;
+        }
+      })();
+    }
 
     const fullPath = this.resolve(filePath);
     if (!fs.existsSync(fullPath)) {
@@ -130,6 +200,16 @@ export class FileOperations {
   }
 
   listDir(dirPath = '.', maxDepth = 2) {
+    if (this.isRemote() && this.sshManager && this.sshManager.isConnected) {
+      return (async () => {
+        try {
+          const entries = await this.sshManager.listDir(dirPath === '.' ? null : dirPath);
+          return `[REMOTE DIRECTORY: ${dirPath}]\n` + entries.map(e => `${e.isDirectory ? '📁 ' : '📄 '}${e.name}`).join('\n');
+        } catch (err) {
+          return `[ERROR] Remote listing failed: ${err.message}`;
+        }
+      })();
+    }
     const fullPath = this.resolve(dirPath);
     if (!fs.existsSync(fullPath)) {
       return `[ERROR] Directory "${dirPath}" does not exist.`;
