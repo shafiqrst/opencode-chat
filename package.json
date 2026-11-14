@@ -1,0 +1,35 @@
+{
+  "name": "kiln-agent",
+  "version": "1.0.0",
+  "description": "Autonomous CLI Coding Agent with Multi-Model Auto-Failover & Built-in Security Guardrails",
+  "type": "module",
+  "main": "src/index.js",
+  "bin": {
+    "kiln": "./bin/opencoder.js",
+    "opencoder": "./bin/opencoder.js"
+  },
+  "scripts": {
+    "start": "node bin/opencoder.js",
+    "web": "node bin/web.js",
+    "desktop": "node bin/desktop.js",
+    "muse": "node bin/muse.js",
+    "test": "node tests/runner.js",
+    "test:muse": "node tests/muse_test.js"
+  },
+  "keywords": [
+    "ai",
+    "agent",
+    "coding-assistant",
+    "claude-code-clone",
+    "deepseek",
+    "failover",
+    "kiln"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "playwright-core": "^1.65.0",
+    "ws": "^8.23.0"
+  }
+}

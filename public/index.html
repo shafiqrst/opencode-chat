@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VibWebs Studio</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="antigravity-layout">
+  <div class="ag-app">
+    <!-- Top Global App Bar -->
+    <header class="ag-topbar">
+      <div class="topbar-left">
+        <!-- Antigravity triangle-style icon -->
+        <button class="nav-icon-btn brand-btn" title="VibWebs">
+          <svg class="brand-svg" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 2L1 21h22L12 2zm0 3.84L19.5 19h-15L12 5.84z"/>
+          </svg>
+        </button>
+        <button class="nav-icon-btn" id="sidebarToggleBtn" title="Toggle Projects Sidebar">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="9" y1="3" x2="9" y2="21"></line></svg>
+        </button>
+        <button class="nav-icon-btn" onclick="history.back()" title="Back">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+        </button>
+        <button class="nav-icon-btn" onclick="history.forward()" title="Forward">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+        </button>
+        <button class="nav-icon-btn" onclick="refreshCurrentWorkspace()" title="Search or Refresh">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+        </button>
+
+        <!-- Current Breadcrumb: project / conversation -->
+        <div class="ag-breadcrumb">
+          <span class="bc-project" id="bcProjectName">opencode-vedio-etc</span>
+          <span class="bc-sep">/</span>
+          <span class="bc-topic" id="bcTopicName">YouTube Video Explanation And Feasibility</span>
+        </div>
+      </div>
+
+      <div class="topbar-right">
+        <button class="topbar-icon-small" title="Options">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="1"></circle><circle cx="12" cy="5" r="1"></circle><circle cx="12" cy="19" r="1"></circle></svg>
+        </button>
+        <button class="btn-open-ide" id="toggleEditorBtn">
+          <span>Open IDE</span>
+        </button>
+        <button class="nav-icon-btn" id="toggleRightNavBtn" title="Toggle Side Panel">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="15" y1="3" x2="15" y2="21"></line></svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Body Container -->
+    <div class="ag-workspace">
+      <!-- 1. LEFT SIDEBAR: PROJECTS & WORKSPACES -->
+      <aside class="ag-sidebar" id="sidebarPane">
+        <div class="sidebar-top-actions">
+          <button class="btn-new-convo" id="newConvoBtn">
+            <span class="plus-icon">+</span>
+            <span>New Conversation</span>
+          </button>
+        </div>
+
+        <div class="sidebar-menu-links">
+          <div class="sidebar-link">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+            <span>Automations</span>
+          </div>
+          <div class="sidebar-link">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="9"></line></svg>
+            <span>Customizations</span>
+          </div>
+        </div>
+
+        <!-- Projects Header with Folder Browser Modal Trigger -->
+        <div class="sidebar-section-header">
+          <span class="sec-title">Projects</span>
+          <div class="sec-icons">
+            <button class="sec-icon-btn" id="browseComputerBtn" title="Browse Any Folder on Computer">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path><line x1="12" y1="11" x2="12" y2="17"></line><line x1="9" y1="14" x2="15" y2="14"></line></svg>
+            </button>
+            <button class="sec-icon-btn" id="filterProjectsBtn" title="Filter / Manage Projects">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- The Exact Antigravity Projects Tree/List -->
+        <div class="projects-list" id="projectsContainer">
+          <div class="loading-state">Loading projects...</div>
+        </div>
+
+        <!-- Sidebar Footer -->
+        <div class="sidebar-footer">
+          <div class="footer-link">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+            <span>Settings</span>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Resizer Splitter 1 -->
+      <div class="pane-resizer" id="resizerLeft"></div>
+
+      <!-- 2. CENTER: CONVERSATION STREAM & ACTIONS -->
+      <main class="ag-center-chat" id="chatMainPane">
+        <div class="chat-scroll-stream" id="messagesContainer">
+          <!-- Dynamic conversation turns rendered here -->
+        </div>
+
+        <!-- Fixed Antigravity Input Bar at bottom -->
+        <div class="ag-input-dock">
+          <div class="input-card">
+            <textarea id="promptInput" rows="1" placeholder="Ask anything, @ to mention, / for actions"></textarea>
+            
+            <div class="input-card-bottom">
+              <div class="input-bottom-left" style="position: relative;">
+                <button class="add-context-btn" title="Add File or Context">+</button>
+                <div class="model-picker-pill" id="modelPickerPill" title="Change Model">
+                  <span class="model-name-text" id="modelName">Gemini 3.8 Flash</span>
+                  <span class="model-tier-badge" id="modelTierBadge">Medium ⚡</span>
+                  <span class="arrow-down">▾</span>
+                </div>
+
+                <!-- Floating Model Selector Dropdown -->
+                <div class="model-dropdown-menu hidden" id="modelDropdownMenu">
+                  <div class="model-dropdown-header">
+                    <span>Select AI Model</span>
+                    <span class="model-dropdown-hint">Instant switch & failover</span>
+                  </div>
+                  <div class="model-options-list" id="modelOptionsList">
+                    <!-- Injected dynamically -->
+                  </div>
+                </div>
+              </div>
+              <div class="input-bottom-right">
+                <button class="btn-turbo" id="btnTurbo" title="Toggle Execution Mode (Turbo: Auto-run vs Safe: Ask confirmation)">
+                  <span class="turbo-icon" id="turboIcon">⚡</span>
+                  <span id="turboText">Turbo</span>
+                  <span class="arrow-down">▾</span>
+                </button>
+                <button class="btn-mic" title="Voice Input">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg>
+                </button>
+                <button class="btn-submit" id="sendBtn" title="Send message">
+                  <span class="square-stop">■</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+
+      <!-- Resizer Splitter 2 -->
+      <div class="pane-resizer" id="resizerRight"></div>
+
+      <!-- 3. RIGHT PANEL: OVERVIEW, REVIEW, FILES, TERMINAL (COLLAPSIBLE) -->
+      <aside class="ag-right-panel" id="rightPanel">
+        <div class="right-panel-header">
+          <span class="panel-tab active" data-tab="overview">Overview</span>
+          <span class="panel-tab" data-tab="review">Review</span>
+          <span class="panel-tab" data-tab="files">Files</span>
+          <span class="panel-tab" data-tab="terminal">Terminal</span>
+          <button class="sec-icon-btn" id="closeRightPanelBtn">✕</button>
+        </div>
+
+        <div class="right-panel-content">
+          <!-- Overview Tab -->
+          <div class="panel-tab-body" id="tabOverview">
+            <div class="aux-link" onclick="switchRightTab('review')">
+              <span class="aux-icon">📋</span>
+              <span class="aux-text">Review (Diffs & Changes)</span>
+            </div>
+            <div class="aux-link" onclick="switchRightTab('files')">
+              <span class="aux-icon">📁</span>
+              <span class="aux-text">Files Explorer</span>
+            </div>
+            <div class="aux-link" onclick="switchRightTab('terminal')">
+              <span class="aux-icon">💻</span>
+              <span class="aux-text">Terminal Console</span>
+            </div>
+            <div class="aux-link">
+              <span class="aux-icon">🧩</span>
+              <span class="aux-text">Extensions</span>
+              <span class="arrow-right">›</span>
+            </div>
+
+            <div class="aux-subheading">Background Tasks ⚙️</div>
+            <div class="aux-tasks-list" id="bgTasksList">
+              <div class="task-empty">No active background tasks</div>
+            </div>
+          </div>
+
+          <!-- Files Tab -->
+          <div class="panel-tab-body hidden" id="tabFiles">
+            <div class="tab-subtoolbar">
+              <span class="subtoolbar-title">FILES</span>
+              <div class="subtoolbar-tools">
+                <button class="tool-btn" id="newFolderBtn" title="New Folder">📁+</button>
+                <button class="tool-btn" id="newFileBtn" title="New File">📄+</button>
+                <button class="tool-btn" id="refreshFilesBtn" title="Refresh">🔄</button>
+              </div>
+            </div>
+            <div class="file-tree" id="fileTree"></div>
+          </div>
+
+          <!-- Terminal Tab -->
+          <div class="panel-tab-body hidden" id="tabTerminal">
+            <div class="terminal-body" id="terminalOutput">
+              <div class="terminal-line system-line">[VibWebs Terminal Ready]</div>
+            </div>
+          </div>
+
+          <!-- Review Tab (Diffs) -->
+          <div class="panel-tab-body hidden" id="tabReview">
+            <div class="review-status-bar">
+              <span id="reviewFilesSummary">0 files changed</span>
+              <button class="action-btn-sm" id="undoBtn">Undo Change</button>
+            </div>
+            <div class="review-diffs" id="reviewDiffsContainer">
+              <div class="empty-diff">No unstaged diffs</div>
+            </div>
+          </div>
+        </div>
+      </aside>
+    </div>
+
+    <!-- NATIVE COMPUTER FOLDER BROWSER MODAL -->
+    <div class="modal-overlay hidden" id="folderBrowserModal">
+      <div class="browser-dialog">
+        <div class="dialog-header">
+          <div class="dialog-title">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+            <span>Select Any Folder or Project on Computer</span>
+          </div>
+          <button class="close-dialog-btn" id="closeBrowserModalBtn">✕</button>
+        </div>
+
+        <div class="dialog-nav-bar">
+          <button class="nav-up-btn" id="browserUpBtn" title="Go to Parent Folder">⬆ Up</button>
+          <input type="text" class="current-path-input" id="browserCurrentPathInput" placeholder="Path (e.g. D:\ or C:\Users\shafi\Projects)">
+          <button class="go-path-btn" id="browserGoPathBtn">Go</button>
+        </div>
+
+        <!-- Drives / Folder Items Grid -->
+        <div class="browser-items-grid" id="browserItemsGrid">
+          <div class="loading-state">Loading computer drives &amp; folders...</div>
+        </div>
+
+        <div class="dialog-footer">
+          <div class="selected-path-display">
+            <span class="label">Selected Folder:</span>
+            <span class="val" id="browserSelectedPath">None</span>
+          </div>
+          <div class="dialog-actions">
+            <button class="btn-cancel" id="browserCancelBtn">Cancel</button>
+            <button class="btn-select" id="browserSelectBtn">Open Project Folder</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Human Permission Modal -->
+    <div class="approval-backdrop hidden" id="confirmModal">
+      <div class="approval-card">
+        <div class="approval-header">
+          <span class="warn-badge">⚠️ PERMISSION REQUIRED</span>
+          <span class="approval-subtitle">Assistant requests permission to execute command:</span>
+        </div>
+        <div class="cmd-box">
+          <code id="confirmCmdText">$ npm test</code>
+        </div>
+        <div class="approval-buttons">
+          <button id="approveBtn" class="btn btn-approve" type="button">✔ Approve Execution</button>
+          <button id="rejectBtn" class="btn btn-reject" type="button">✖ Reject</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
